@@ -15,8 +15,6 @@ pub const PAGESIZE: u32 = 1 << PAGESHIFT;
 pub const MAP_PAGESHIFT: u32 = 16;
 pub const MAP_PAGESIZE: u32 = 1 << MAP_PAGESHIFT;
 
-
-
 pub const MAP_SHARING_MASK: u32 = 0x03;
 
 pub const MAP_FIXED: u32 = 0x10; /* Interpret addr exactly.  */

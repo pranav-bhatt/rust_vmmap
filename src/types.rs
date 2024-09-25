@@ -1,22 +1,41 @@
-/// Used to identify whether the vmmap entry is backed anonymously, 
+/// Used to identify whether the vmmap entry is backed anonymously,
 /// by an fd, or by a shared memory segment
-pub enum MemoryBackingType{
+
+#[derive(Clone, Copy)]
+pub enum MemoryBackingType {
     Anonymous,
-    SharedMemory(u64), // stores shmid
+    SharedMemory(u64),   // stores shmid
     FileDescriptor(u64), // stores file descriptor addr
 }
 
 /// Kept generic incase for different types of addresss systems (page based, direct address, etc)
 pub trait VmmapEntryOps {
-    fn get_key(&self) -> u32;           // Key could be a page number or an address
-    fn get_size(&self) -> u32;          // Size in bytes or pages
-    fn get_protection(&self) -> i32;    // Return protection flags (e.g., read/write)
+    fn get_key(&self) -> u32; // Key could be a page number or an address
+    fn set_key(&mut self, key: u32);
+
+    fn get_size(&self) -> u32; // Size in bytes or pages
+    fn set_size(&mut self, size: u32);
+
+    fn get_protection(&self) -> i32; // Return protection flags (e.g., read/write)
+    fn set_protection(&mut self, prot: i32);
+
     fn get_max_protection(&self) -> i32; // Return max protection
-    fn get_flags(&self) -> i32;         // implementation specific flags
-    fn is_removed(&self) -> bool;       // Check if the entry is marked as removed
-    fn get_offset(&self) -> i64;        // Offset into the backing store
-    fn get_file_size(&self) -> i64;     // Size of the backing store (if applicable)
+    fn set_max_protection(&mut self, maxprot: i32);
+
+    fn get_flags(&self) -> i32; // implementation specific flags
+    fn set_flags(&mut self, flags: i32);
+
+    fn is_removed(&self) -> bool; // Check if the entry is marked as removed
+    fn set_removed(&mut self, removed: bool);
+
+    fn get_offset(&self) -> i64; // Offset into the backing store
+    fn set_offset(&mut self, offset: i64);
+
+    fn get_file_size(&self) -> i64; // Size of the backing store (if applicable)
+    fn set_file_size(&mut self, file_size: i64);
+
     fn get_backing_info(&self) -> &MemoryBackingType; // Get backing information (e.g., file descriptor or shared memory)
+    fn set_backing_info(&mut self, backing: MemoryBackingType);
 
     fn max_prot(&self) -> i32; // determines the maximum protection for a memory map entry
     fn print(&self);
@@ -26,8 +45,8 @@ pub trait VmmapEntryOps {
     // things that are backed by fd -> represented by -1
 
     // Leave todo
-    fn check_fd_protection(&self);  // will call the microvisor, need to pass fd 
-                                    // number if only its files backed and returns flags of fd
+    fn check_fd_protection(&self, cage_id: i32); // will call the microvisor, need to pass fd
+                                                 // number if only its files backed and returns flags of fd
 }
 
 pub trait VmmapOps {
@@ -45,13 +64,10 @@ pub trait VmmapOps {
     );
 
     fn contain_cmp_entries();
-    
+
     fn find_space();
 
-    fn add_entry(
-        &mut self,
-        vmmap_entry_ref: Box<dyn VmmapEntryOps>,
-    );
+    fn add_entry(&mut self, vmmap_entry_ref: Box<dyn VmmapEntryOps>);
 
     fn add_entry_with_override(
         page_num: usize,

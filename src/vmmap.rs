@@ -1,29 +1,26 @@
 use std::collections::BTreeMap;
 
-use crate::types::{VmmapEntryOps, VmmapOps, MemoryBackingType};
+use crate::types::{MemoryBackingType, VmmapEntryOps, VmmapOps};
 use crate::vmmap_entries::VmmapEntry;
 
 pub struct Vmmap {
     entries: BTreeMap<u32, Box<dyn VmmapEntryOps>>, // Keyed by `page_num`
-    cached_entry: Option<Box<dyn VmmapEntryOps>>, // Use Option for safety
+    cached_entry: Option<Box<dyn VmmapEntryOps>>,   // Use Option for safety
 }
 
 impl Vmmap {
     fn new() -> Self {
-        Vmmap{
+        Vmmap {
             entries: BTreeMap::new(),
             cached_entry: None,
         }
     }
 }
 
-impl VmmapOps for Vmmap{
-    fn add_entry(
-        &mut self,
-        vmmap_entry_ref: Box<dyn VmmapEntryOps>,
-    ) {
+impl VmmapOps for Vmmap {
+    fn add_entry(&mut self, vmmap_entry_ref: Box<dyn VmmapEntryOps>) {
         let page_num = vmmap_entry_ref.get_key();
-        self.entries.insert(page_num,vmmap_entry_ref);
+        self.entries.insert(page_num, vmmap_entry_ref);
     }
 
     fn update(
@@ -48,7 +45,7 @@ impl VmmapOps for Vmmap{
         let mut to_insert = Vec::new();
         for (&entry_page_num, entry) in self.entries.range_mut(..) {
             let ent_end_page = entry.get_key() + entry.get_size();
-            let additional_offset = ((new_region_end_page - entry.get_key())) << 12;
+            let additional_offset = ((new_region_end_page - entry.get_key()) << 12) as i64;
 
             if entry.get_key() < page_num && new_region_end_page < ent_end_page {
                 // Case 1: Split the entry into two, with new mapping in the middle
@@ -59,30 +56,30 @@ impl VmmapOps for Vmmap{
                     entry.get_max_protection(),
                     entry.get_flags(),
                     false,
-                    (entry.get_offset() + additional_offset) as i,
+                    (entry.get_offset() + additional_offset) as i64,
                     entry.get_file_size(),
                     0,
-                    backing.clone(),
+                    backing,
                 ));
                 to_insert.push((new_region_end_page, split_entry));
-                entry.get_npages() = (page_num - entry.get_page_num()) as u32;
+                entry.set_size((page_num - entry.get_key()) as u32);
                 break;
-            } else if entry.get_page_num() < page_num && page_num < ent_end_page {
+            } else if entry.get_key() < page_num && page_num < ent_end_page {
                 // Case 2: New mapping overlaps end of the existing mapping
-                entry.get_npages() = (page_num - entry.get_page_num()) as u32;
-            } else if entry.get_page_num() < new_region_end_page && new_region_end_page < ent_end_page {
+                entry.set_size((page_num - entry.get_key()) as u32);
+            } else if entry.get_key() < new_region_end_page && new_region_end_page < ent_end_page {
                 // Case 3: New mapping overlaps the start of the existing mapping
-                entry.page_num = new_region_end_page;
-                entry.npages = (ent_end_page - new_region_end_page) as u32;
-                entry.offset += additional_offset;
+                entry.set_key(new_region_end_page);
+                entry.set_size((ent_end_page - new_region_end_page) as u32);
+                entry.set_offset(entry.get_offset() + additional_offset);
                 break;
-            } else if page_num <= entry.page_num && ent_end_page <= new_region_end_page {
+            } else if page_num <= entry.get_key() && ent_end_page <= new_region_end_page {
                 // Case 4: New mapping completely covers the existing entry
-                entry.removed = 1;
+                entry.set_removed(true);
                 to_remove.push(entry_page_num);
-                if Some(entry) == self.cached_entry.as_ref() {
-                    self.cached_entry = None;
-                }
+                // if Some(entry) == self.cached_entry.as_ref() {
+                //     self.cached_entry = None;
+                // }
             }
         }
 
@@ -104,7 +101,7 @@ impl VmmapOps for Vmmap{
                 prot,
                 maxprot,
                 flags,
-                removed: 0,
+                removed: false,
                 offset,
                 file_size,
                 cage_id: 0,
@@ -112,5 +109,5 @@ impl VmmapOps for Vmmap{
             });
             self.entries.insert(page_num, new_entry);
         }
-    }    
+    }
 }
