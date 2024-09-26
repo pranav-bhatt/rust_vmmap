@@ -1,26 +1,34 @@
-use std::collections::BTreeMap;
+use std::ops::RangeInclusive;
 
-use crate::types::{MemoryBackingType, VmmapEntryOps, VmmapOps};
-use crate::vmmap_entries::VmmapEntry;
+use nodit::{interval::ii, Interval};
+use nodit::NoditMap;
+
+use crate::types::{MemoryBackingType, VmmapEntry, VmmapOps};
 
 pub struct Vmmap {
-    entries: BTreeMap<u32, Box<dyn VmmapEntryOps>>, // Keyed by `page_num`
-    cached_entry: Option<Box<dyn VmmapEntryOps>>,   // Use Option for safety
+    pub entries: NoditMap<u32, Interval<u32>, VmmapEntry>, // Keyed by `page_num`
+    pub cached_entry: Option<VmmapEntry>,                        // TODO: is this still needed?
+                                                                 // Use Option for safety
 }
 
 impl Vmmap {
     fn new() -> Self {
         Vmmap {
-            entries: BTreeMap::new(),
+            entries: NoditMap::new(),
             cached_entry: None,
         }
     }
 }
 
 impl VmmapOps for Vmmap {
-    fn add_entry(&mut self, vmmap_entry_ref: Box<dyn VmmapEntryOps>) {
-        let page_num = vmmap_entry_ref.get_key();
-        self.entries.insert(page_num, vmmap_entry_ref);
+    fn add_entry(&mut self, vmmap_entry_ref: VmmapEntry) {
+        self.entries.insert_strict(
+            ii(
+                vmmap_entry_ref.page_num,
+                vmmap_entry_ref.page_num + vmmap_entry_ref.npages,
+            ),
+            vmmap_entry_ref,
+        );
     }
 
     fn update(
@@ -36,14 +44,13 @@ impl VmmapOps for Vmmap {
         file_size: i64,
     ) {
         let new_region_end_page = page_num + npages;
-
-        // Ensure we have valid input
         assert!(npages > 0);
 
-        // Iterate over existing entries and update as needed
         let mut to_remove = Vec::new();
         let mut to_insert = Vec::new();
-        for (&entry_page_num, entry) in self.entries.range_mut(..) {
+
+        // Range query: Only check entries that overlap with the new mapping region
+        for (&entry_page_num, entry) in self.entries.range_mut(page_num..new_region_end_page) {
             let ent_end_page = entry.get_key() + entry.get_size();
             let additional_offset = ((new_region_end_page - entry.get_key()) << 12) as i64;
 
@@ -65,7 +72,7 @@ impl VmmapOps for Vmmap {
                 entry.set_size((page_num - entry.get_key()) as u32);
                 break;
             } else if entry.get_key() < page_num && page_num < ent_end_page {
-                // Case 2: New mapping overlaps end of the existing mapping
+                // Case 2: New mapping overlaps the end of the existing mapping
                 entry.set_size((page_num - entry.get_key()) as u32);
             } else if entry.get_key() < new_region_end_page && new_region_end_page < ent_end_page {
                 // Case 3: New mapping overlaps the start of the existing mapping
@@ -77,9 +84,6 @@ impl VmmapOps for Vmmap {
                 // Case 4: New mapping completely covers the existing entry
                 entry.set_removed(true);
                 to_remove.push(entry_page_num);
-                // if Some(entry) == self.cached_entry.as_ref() {
-                //     self.cached_entry = None;
-                // }
             }
         }
 
