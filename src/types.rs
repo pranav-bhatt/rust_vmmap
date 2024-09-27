@@ -1,4 +1,4 @@
-use crate::vmmap_entries;
+use nodit::Interval;
 
 /// Used to identify whether the vmmap entry is backed anonymously,
 /// by an fd, or by a shared memory segment
@@ -44,10 +44,6 @@ pub trait VmmapOps {
         cage_id: u64,
     );
 
-    fn contain_cmp_entries();
-
-    fn find_space();
-
     fn add_entry(&mut self, vmmap_entry_ref: VmmapEntry);
 
     fn add_entry_with_override(
@@ -65,29 +61,46 @@ pub trait VmmapOps {
 
     fn change_prot(&mut self, page_num: u32, npages: u32, new_prot: i32);
 
-    // fn add_entry_with_override_and_shmid();
-
     fn remove_entry(&mut self, page_num: u32, npages: u32);
 
-    fn check_existing_mapping();
+    fn check_existing_mapping(&self, page_num: u32, npages: u32, prot: i32) -> bool;
 
-    fn check_addr_mapping();
+    fn check_addr_mapping(&mut self, page_num: u32, npages: u32, prot: i32) -> Option<u32>;
 
-    fn find_page();
+    fn find_page(&self, page_num: u32) -> Option<&VmmapEntry>;
 
-    fn find_page_iter();
+    fn find_page_mut(&mut self, page_num: u32) -> Option<&mut VmmapEntry>;
 
-    fn iter_at_end();
+    fn find_page_iter(
+        &self,
+        page_num: u32,
+    ) -> impl DoubleEndedIterator<Item = (&Interval<u32>, &VmmapEntry)>;
 
-    fn iter_start();
+    fn find_page_iter_mut(
+        &mut self,
+        page_num: u32,
+    ) -> impl DoubleEndedIterator<Item = (&Interval<u32>, &mut VmmapEntry)>;
 
-    fn iter_incr();
+    fn first_entry(&self) -> Option<(&Interval<u32>, &VmmapEntry)>;
 
-    fn visit();
+    fn last_entry(&self) -> Option<(&Interval<u32>, &VmmapEntry)>;
 
-    fn find_map_space();
+    fn double_ended_iter(&self) -> impl DoubleEndedIterator<Item = (&Interval<u32>, &VmmapEntry)>;
 
-    fn find_map_space_above_hint();
+    fn double_ended_iter_mut(
+        &mut self,
+    ) -> impl DoubleEndedIterator<Item = (&Interval<u32>, &mut VmmapEntry)>;
 
-    fn debug();
+    fn find_space(&self, npages: u32) -> Option<Interval<u32>>;
+
+    fn find_space_above_hint(&self, npages: u32, hint: u32) -> Option<Interval<u32>>;
+
+    fn find_map_space(&self, num_pages: u32, pages_per_map: u32) -> Option<Interval<u32>>;
+
+    fn find_map_space_with_hint(
+        &self,
+        num_pages: u32,
+        pages_per_map: u32,
+        hint: u32,
+    ) -> Option<Interval<u32>>;
 }
