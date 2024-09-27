@@ -1,8 +1,12 @@
+use crate::vmmap_entries;
+
 /// Used to identify whether the vmmap entry is backed anonymously,
 /// by an fd, or by a shared memory segment
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+
 pub enum MemoryBackingType {
+    None, // just a dummy value for places where it needs to be passed, but you dont have the value
     Anonymous,
     SharedMemory(u64),   // stores shmid
     FileDescriptor(u64), // stores file descriptor addr
@@ -17,10 +21,10 @@ pub struct VmmapEntry {
     pub npages: u32,   /* number of pages */
     pub prot: i32,     /* mprotect attribute */
     pub maxprot: i32,
-    pub flags: i32,     /* mapping flags */
-    pub removed: bool,  /* flag set in fn Update(); */
-    pub offset: i64,    /* offset into desc */
-    pub file_size: i64, /* backing store size */
+    pub flags: i32,       /* mapping flags */
+    pub removed: bool,    /* flag set in fn Update(); */
+    pub file_offset: i64, /* offset into desc */
+    pub file_size: i64,   /* backing store size */
     pub cage_id: u64,
     pub backing: MemoryBackingType,
 }
@@ -35,7 +39,7 @@ pub trait VmmapOps {
         flags: i32,
         backing: MemoryBackingType,
         remove: bool,
-        offset: i64,
+        file_offset: i64,
         file_size: i64,
         cage_id: u64,
     );
@@ -47,22 +51,23 @@ pub trait VmmapOps {
     fn add_entry(&mut self, vmmap_entry_ref: VmmapEntry);
 
     fn add_entry_with_override(
-        page_num: usize,
+        &mut self,
+        page_num: u32,
         npages: u32,
         prot: i32,
         maxprot: i32,
         flags: i32,
-        shmid: i32,
-        desc: u64, // check the file descriptors in rust posix if they are i32 or u64
-        offset: u64,
-        file_size: u64,
+        backing: MemoryBackingType,
+        file_offset: i64,
+        file_size: i64,
+        cage_id: u64,
     );
 
-    fn change_prot();
+    fn change_prot(&mut self, page_num: u32, npages: u32, new_prot: i32);
 
-    fn add_entry_with_override_and_shmid();
+    // fn add_entry_with_override_and_shmid();
 
-    fn remove_entry();
+    fn remove_entry(&mut self, page_num: u32, npages: u32);
 
     fn check_existing_mapping();
 

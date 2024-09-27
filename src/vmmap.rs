@@ -16,6 +16,8 @@ impl Vmmap {
             cached_entry: None,
         }
     }
+
+    fn spilt_and_insert() {}
 }
 
 impl VmmapOps for Vmmap {
@@ -30,6 +32,47 @@ impl VmmapOps for Vmmap {
         );
     }
 
+    fn add_entry_with_override(
+        &mut self,
+        page_num: u32,
+        npages: u32,
+        prot: i32,
+        maxprot: i32,
+        flags: i32,
+        backing: MemoryBackingType,
+        file_offset: i64,
+        file_size: i64,
+        cage_id: u64,
+    ) {
+        self.update(
+            page_num,
+            npages,
+            prot,
+            maxprot,
+            flags,
+            backing,
+            false,
+            file_offset,
+            file_size,
+            cage_id,
+        );
+    }
+
+    fn remove_entry(&mut self, page_num: u32, npages: u32) {
+        self.update(
+            page_num,
+            npages,
+            0,
+            0,
+            0,
+            MemoryBackingType::None,
+            true,
+            0,
+            0,
+            0,
+        );
+    }
+
     fn update(
         &mut self,
         page_num: u32,
@@ -39,105 +82,68 @@ impl VmmapOps for Vmmap {
         flags: i32,
         backing: MemoryBackingType,
         remove: bool,
-        offset: i64,
+        file_offset: i64,
         file_size: i64,
         cage_id: u64,
     ) {
+        assert!(npages > 0); //TODO: panics :(
+
         let new_region_end_page = page_num + npages;
         let new_region_start_page = page_num; // just for ease of understanding
-        assert!(npages > 0);
-
-        let overlapping_intervals: Vec<_> = self
-            .entries
-            .overlapping(ie(new_region_start_page, new_region_end_page))
-            .map(|(overlap_interval, entry)| (*overlap_interval, entry))
-            .collect();
-
-        let mut to_remove = Vec::new();
-        let mut to_insert = Vec::new();
-
-        for (overlap_interval, entry) in overlapping_intervals {
-            let ent_end_page = overlap_interval.end();
-            let ent_start_page = overlap_interval.start();
-
-            //TODO: double check this
-            let additional_offset = ((new_region_end_page - ent_start_page) << 12) as i64;
-
-            // If the overlapping entry start lies before the new region start,
-            // shrink the overlapping entry from its start upto new region end
-            if ent_start_page < new_region_start_page && ent_end_page > new_region_start_page {
-                let left_entry = VmmapEntry {
-                    page_num: ent_start_page,
-                    npages: new_region_start_page - ent_start_page,
-                    prot: entry.prot,
-                    maxprot: entry.maxprot,
-                    flags: entry.flags,
-                    backing: entry.backing,
-                    offset: entry.offset - (new_region_start_page as i64), //TODO: check if this is right
-                    file_size: entry.file_size,
-                    removed: false,
-                    cage_id: entry.cage_id,
-                };
-                to_insert.push((ie(ent_start_page, new_region_start_page), left_entry));
-                to_remove.push(overlap_interval);
-            }
-
-            // If the new region end lies before the overlapping entry end,
-            // shrink the overlapping entry from new region end upto overlapping entry end
-            if ent_start_page < new_region_end_page && ent_end_page > new_region_end_page {
-                let right_entry = VmmapEntry {
-                    page_num: new_region_end_page,
-                    npages: ent_end_page - new_region_end_page,
-                    prot: entry.prot,
-                    maxprot: entry.maxprot,
-                    flags: entry.flags,
-                    backing: entry.backing,
-                    offset: entry.offset + additional_offset,
-                    file_size: entry.file_size,
-                    removed: false,
-                    cage_id: entry.cage_id,
-                };
-
-                to_insert.push((ie(new_region_end_page, ent_end_page), right_entry));
-                // need to check if previous condition didn't already mark the interval to be removed
-                if !(ent_start_page < new_region_start_page && ent_end_page > new_region_start_page)
-                {
-                    to_remove.push(overlap_interval);
-                }
-            }
-
-            if new_region_start_page <= ent_start_page && ent_end_page <= new_region_end_page {
-                to_remove.push(overlap_interval);
-            }
-        }
-        
-
-        // Remove overlapping intervals
-        for interval in to_remove {
-            self.entries.remove_overlapping(interval);
-        }
-
-        // Insert split entries
-        for (interval, value) in to_insert {
-            self.entries.insert_strict(interval, value);
-        }
 
         // Insert the new entry if not marked for removal
-        if !remove {
-            let new_entry = VmmapEntry {
-                page_num,
-                npages,
-                prot,
-                maxprot,
-                flags,
-                backing,
-                offset,
-                file_size,
-                removed: false,
-                cage_id,
-            };
+        let new_entry = VmmapEntry {
+            page_num,
+            npages,
+            prot,
+            maxprot,
+            flags,
+            backing,
+            file_offset,
+            file_size,
+            removed: false,
+            cage_id,
+        };
+        self.entries
+            .insert_overwrite(ie(new_region_start_page, new_region_end_page), new_entry);
+
+        if remove {
+            // strange way to do this, but this is the best using the library we have at hand
+            // while also maintaining the shrunk down entries
+            // using remove first, then insert will cause us to lose existing entries
             self.entries
-                .insert_strict(ie(new_region_start_page, new_region_end_page), new_entry);
+                .remove_overlapping(ie(new_region_start_page, new_region_end_page));
+        }
+    }
+
+    fn change_prot(&mut self, page_num: u32, npages: u32, new_prot: i32) {
+        let new_region_end_page = page_num + npages;
+        let new_region_start_page = page_num;
+
+        let mut to_insert = Vec::new();
+
+        for (overlap_interval, entry) in self
+            .entries
+            .overlapping_mut(ie(new_region_start_page, new_region_end_page))
+        {
+            let mut ent_start = overlap_interval.start();
+            let ent_end = overlap_interval.end();
+
+            if ent_start < new_region_start_page && ent_end > new_region_start_page {
+                to_insert.push(ie(new_region_start_page, ent_end));
+                ent_start = new_region_start_page; // need to update incase next condition is true
+            }
+            if ent_start < new_region_end_page && ent_end > new_region_end_page {
+                to_insert.push(ie(ent_start, new_region_end_page));
+            } else {
+                entry.prot = new_prot;
+            }
+        }
+
+        for interval in to_insert {
+            let mut interval_val = self.entries.get_at_point(interval.start()).unwrap().clone();
+            interval_val.prot = new_prot;
+            self.entries.insert_overwrite(interval, interval_val);
         }
     }
 }
