@@ -37,6 +37,7 @@ pub trait VmmapOps {
         remove: bool,
         offset: i64,
         file_size: i64,
+        cage_id: u64,
     );
 
     fn contain_cmp_entries();

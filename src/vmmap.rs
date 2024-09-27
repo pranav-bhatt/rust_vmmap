@@ -1,14 +1,12 @@
-use std::ops::RangeInclusive;
-
-use nodit::{interval::ii, Interval};
 use nodit::NoditMap;
+use nodit::{interval::ie, Interval};
 
 use crate::types::{MemoryBackingType, VmmapEntry, VmmapOps};
 
 pub struct Vmmap {
     pub entries: NoditMap<u32, Interval<u32>, VmmapEntry>, // Keyed by `page_num`
-    pub cached_entry: Option<VmmapEntry>,                        // TODO: is this still needed?
-                                                                 // Use Option for safety
+    pub cached_entry: Option<VmmapEntry>,                  // TODO: is this still needed?
+                                                           // Use Option for safety
 }
 
 impl Vmmap {
@@ -23,7 +21,8 @@ impl Vmmap {
 impl VmmapOps for Vmmap {
     fn add_entry(&mut self, vmmap_entry_ref: VmmapEntry) {
         self.entries.insert_strict(
-            ii(
+            // pages x to y, y included
+            ie(
                 vmmap_entry_ref.page_num,
                 vmmap_entry_ref.page_num + vmmap_entry_ref.npages,
             ),
@@ -42,76 +41,103 @@ impl VmmapOps for Vmmap {
         remove: bool,
         offset: i64,
         file_size: i64,
+        cage_id: u64,
     ) {
         let new_region_end_page = page_num + npages;
+        let new_region_start_page = page_num; // just for ease of understanding
         assert!(npages > 0);
+
+        let overlapping_intervals: Vec<_> = self
+            .entries
+            .overlapping(ie(new_region_start_page, new_region_end_page))
+            .map(|(overlap_interval, entry)| (*overlap_interval, entry))
+            .collect();
 
         let mut to_remove = Vec::new();
         let mut to_insert = Vec::new();
 
-        // Range query: Only check entries that overlap with the new mapping region
-        for (&entry_page_num, entry) in self.entries.range_mut(page_num..new_region_end_page) {
-            let ent_end_page = entry.get_key() + entry.get_size();
-            let additional_offset = ((new_region_end_page - entry.get_key()) << 12) as i64;
+        for (overlap_interval, entry) in overlapping_intervals {
+            let ent_end_page = overlap_interval.end();
+            let ent_start_page = overlap_interval.start();
 
-            if entry.get_key() < page_num && new_region_end_page < ent_end_page {
-                // Case 1: Split the entry into two, with new mapping in the middle
-                let split_entry = Box::new(VmmapEntry::new(
-                    new_region_end_page,
-                    (ent_end_page - new_region_end_page),
-                    entry.get_protection(),
-                    entry.get_max_protection(),
-                    entry.get_flags(),
-                    false,
-                    (entry.get_offset() + additional_offset) as i64,
-                    entry.get_file_size(),
-                    0,
-                    backing,
-                ));
-                to_insert.push((new_region_end_page, split_entry));
-                entry.set_size((page_num - entry.get_key()) as u32);
-                break;
-            } else if entry.get_key() < page_num && page_num < ent_end_page {
-                // Case 2: New mapping overlaps the end of the existing mapping
-                entry.set_size((page_num - entry.get_key()) as u32);
-            } else if entry.get_key() < new_region_end_page && new_region_end_page < ent_end_page {
-                // Case 3: New mapping overlaps the start of the existing mapping
-                entry.set_key(new_region_end_page);
-                entry.set_size((ent_end_page - new_region_end_page) as u32);
-                entry.set_offset(entry.get_offset() + additional_offset);
-                break;
-            } else if page_num <= entry.get_key() && ent_end_page <= new_region_end_page {
-                // Case 4: New mapping completely covers the existing entry
-                entry.set_removed(true);
-                to_remove.push(entry_page_num);
+            //TODO: double check this
+            let additional_offset = ((new_region_end_page - ent_start_page) << 12) as i64;
+
+            // If the overlapping entry start lies before the new region start,
+            // shrink the overlapping entry from its start upto new region end
+            if ent_start_page < new_region_start_page && ent_end_page > new_region_start_page {
+                let left_entry = VmmapEntry {
+                    page_num: ent_start_page,
+                    npages: new_region_start_page - ent_start_page,
+                    prot: entry.prot,
+                    maxprot: entry.maxprot,
+                    flags: entry.flags,
+                    backing: entry.backing,
+                    offset: entry.offset - (new_region_start_page as i64), //TODO: check if this is right
+                    file_size: entry.file_size,
+                    removed: false,
+                    cage_id: entry.cage_id,
+                };
+                to_insert.push((ie(ent_start_page, new_region_start_page), left_entry));
+                to_remove.push(overlap_interval);
+            }
+
+            // If the new region end lies before the overlapping entry end,
+            // shrink the overlapping entry from new region end upto overlapping entry end
+            if ent_start_page < new_region_end_page && ent_end_page > new_region_end_page {
+                let right_entry = VmmapEntry {
+                    page_num: new_region_end_page,
+                    npages: ent_end_page - new_region_end_page,
+                    prot: entry.prot,
+                    maxprot: entry.maxprot,
+                    flags: entry.flags,
+                    backing: entry.backing,
+                    offset: entry.offset + additional_offset,
+                    file_size: entry.file_size,
+                    removed: false,
+                    cage_id: entry.cage_id,
+                };
+
+                to_insert.push((ie(new_region_end_page, ent_end_page), right_entry));
+                // need to check if previous condition didn't already mark the interval to be removed
+                if !(ent_start_page < new_region_start_page && ent_end_page > new_region_start_page)
+                {
+                    to_remove.push(overlap_interval);
+                }
+            }
+
+            if new_region_start_page <= ent_start_page && ent_end_page <= new_region_end_page {
+                to_remove.push(overlap_interval);
             }
         }
+        
 
-        // Remove marked entries
-        for key in to_remove {
-            self.entries.remove(&key);
+        // Remove overlapping intervals
+        for interval in to_remove {
+            self.entries.remove_overlapping(interval);
         }
 
-        // Insert the split entries
-        for (key, value) in to_insert {
-            self.entries.insert(key, value);
+        // Insert split entries
+        for (interval, value) in to_insert {
+            self.entries.insert_strict(interval, value);
         }
 
         // Insert the new entry if not marked for removal
         if !remove {
-            let new_entry = Box::new(VmmapEntry {
+            let new_entry = VmmapEntry {
                 page_num,
-                npages: npages as u32,
+                npages,
                 prot,
                 maxprot,
                 flags,
-                removed: false,
+                backing,
                 offset,
                 file_size,
-                cage_id: 0,
-                backing,
-            });
-            self.entries.insert(page_num, new_entry);
+                removed: false,
+                cage_id,
+            };
+            self.entries
+                .insert_strict(ie(new_region_start_page, new_region_end_page), new_entry);
         }
     }
 }
