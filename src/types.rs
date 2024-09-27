@@ -3,8 +3,8 @@ use nodit::Interval;
 /// Used to identify whether the vmmap entry is backed anonymously,
 /// by an fd, or by a shared memory segment
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
-
 pub enum MemoryBackingType {
     None, // just a dummy value for places where it needs to be passed, but you dont have the value
     Anonymous,
@@ -29,6 +29,7 @@ pub struct VmmapEntry {
     pub backing: MemoryBackingType,
 }
 
+#[allow(dead_code)]
 pub trait VmmapOps {
     fn update(
         &mut self,

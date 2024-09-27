@@ -1,8 +1,12 @@
+#[allow(dead_code)]
 use crate::constants::{
-    MAP_PRIVATE, O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, PAGESIZE, PROT_NONE, PROT_READ, PROT_WRITE,
+    // MAP_PRIVATE, O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, PAGESIZE, 
+    PROT_NONE, 
+    // PROT_READ, PROT_WRITE,
 };
 use crate::types::{MemoryBackingType, VmmapEntry};
 
+#[allow(dead_code)]
 impl VmmapEntry {
     pub fn new(
         page_num: u32,
@@ -62,6 +66,8 @@ impl VmmapEntry {
     // things that are backed by fd -> represented by -1
 
     // Leave todo
-    fn check_fd_protection(&self, cage_id: i32) {} // will call the microvisor, need to pass fd
+    fn check_fd_protection(&self, cage_id: i32) {
+        let _= cage_id;
+    } // will call the microvisor, need to pass fd
                                                    // number if only its files backed and returns flags of fd
 }

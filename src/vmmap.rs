@@ -2,7 +2,10 @@ use nodit::NoditMap;
 use nodit::{interval::ie, Interval};
 
 use crate::constants::{
-    MAP_PRIVATE, O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, PAGESIZE, PROT_EXEC, PROT_NONE, PROT_READ,
+    // MAP_PRIVATE, O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, PAGESIZE,
+    PROT_EXEC,
+    PROT_NONE,
+    PROT_READ,
     PROT_WRITE,
 };
 use crate::types::{MemoryBackingType, VmmapEntry, VmmapOps};
@@ -13,6 +16,7 @@ pub struct Vmmap {
                                                            // Use Option for safety
 }
 
+#[allow(dead_code)]
 impl Vmmap {
     fn new() -> Self {
         Vmmap {
@@ -36,7 +40,7 @@ impl Vmmap {
 
 impl VmmapOps for Vmmap {
     fn add_entry(&mut self, vmmap_entry_ref: VmmapEntry) {
-        self.entries.insert_strict(
+        let _ = self.entries.insert_strict(
             // pages x to y, y included
             ie(
                 vmmap_entry_ref.page_num,
@@ -118,14 +122,16 @@ impl VmmapOps for Vmmap {
             removed: false,
             cage_id,
         };
-        self.entries
+        let _ = self
+            .entries
             .insert_overwrite(ie(new_region_start_page, new_region_end_page), new_entry);
 
         if remove {
             // strange way to do this, but this is the best using the library we have at hand
             // while also maintaining the shrunk down entries
             // using remove first, then insert will cause us to lose existing entries
-            self.entries
+            let _ = self
+                .entries
                 .remove_overlapping(ie(new_region_start_page, new_region_end_page));
         }
     }
@@ -157,7 +163,7 @@ impl VmmapOps for Vmmap {
         for interval in to_insert {
             let mut interval_val = self.entries.get_at_point(interval.start()).unwrap().clone();
             interval_val.prot = new_prot;
-            self.entries.insert_overwrite(interval, interval_val);
+            let _ = self.entries.insert_overwrite(interval, interval_val);
         }
     }
 
@@ -381,7 +387,12 @@ impl VmmapOps for Vmmap {
         None
     }
 
-    fn find_map_space_with_hint(&self, num_pages: u32, pages_per_map: u32, hint:u32) -> Option<Interval<u32>> {
+    fn find_map_space_with_hint(
+        &self,
+        num_pages: u32,
+        pages_per_map: u32,
+        hint: u32,
+    ) -> Option<Interval<u32>> {
         let start = hint;
         let end = self.last_entry();
 
@@ -393,10 +404,7 @@ impl VmmapOps for Vmmap {
             let rounded_num_pages =
                 self.round_page_num_up_to_map_multiple(num_pages, pages_per_map);
 
-            for gap in self
-                .entries
-                .gaps_trimmed(ie(start, end_unwrapped))
-            {
+            for gap in self.entries.gaps_trimmed(ie(start, end_unwrapped)) {
                 let aligned_start_page =
                     self.trunc_page_num_down_to_map_multiple(gap.start(), pages_per_map);
                 let aligned_end_page =
