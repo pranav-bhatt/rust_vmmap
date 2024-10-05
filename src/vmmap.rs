@@ -18,7 +18,7 @@ pub struct Vmmap {
 
 #[allow(dead_code)]
 impl Vmmap {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Vmmap {
             entries: NoditMap::new(),
             cached_entry: None,
@@ -418,5 +418,16 @@ impl VmmapOps for Vmmap {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Vmmap;
+
+    #[test]
+    fn test_vmmap_new() {
+        let vmmap = Vmmap::new();
+        assert!(vmmap.entries.is_empty());
     }
 }

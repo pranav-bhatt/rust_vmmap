@@ -1,5 +1,5 @@
 #[allow(dead_code)]
 mod constants;
-mod types;
-mod vmmap;
-mod vmmap_entries;
+pub mod types;
+pub mod vmmap;
+pub mod vmmap_entries;
