@@ -1,3 +1,5 @@
+use std::io;
+
 use nodit::NoditMap;
 use nodit::{interval::ie, Interval};
 
@@ -61,7 +63,7 @@ impl VmmapOps for Vmmap {
         file_offset: i64,
         file_size: i64,
         cage_id: u64,
-    ) {
+    ) -> Result<(), io::Error> {
         self.update(
             page_num,
             npages,
@@ -73,10 +75,10 @@ impl VmmapOps for Vmmap {
             file_offset,
             file_size,
             cage_id,
-        );
+        )
     }
 
-    fn remove_entry(&mut self, page_num: u32, npages: u32) {
+    fn remove_entry(&mut self, page_num: u32, npages: u32) -> Result<(), io::Error> {
         self.update(
             page_num,
             npages,
@@ -88,7 +90,7 @@ impl VmmapOps for Vmmap {
             0,
             0,
             0,
-        );
+        )
     }
 
     fn update(
@@ -103,8 +105,13 @@ impl VmmapOps for Vmmap {
         file_offset: i64,
         file_size: i64,
         cage_id: u64,
-    ) {
-        assert!(npages > 0); //TODO: panics :(
+    ) -> Result<(), io::Error> {
+        if npages == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Number of pages cannot be zero",
+            ));
+        }
 
         let new_region_end_page = page_num + npages;
         let new_region_start_page = page_num; // just for ease of understanding
@@ -134,6 +141,8 @@ impl VmmapOps for Vmmap {
                 .entries
                 .remove_overlapping(ie(new_region_start_page, new_region_end_page));
         }
+
+        Ok(())
     }
 
     fn change_prot(&mut self, page_num: u32, npages: u32, new_prot: i32) {
@@ -422,12 +431,62 @@ impl VmmapOps for Vmmap {
 }
 
 #[cfg(test)]
+pub mod test_vmmap_util {
+    pub fn create_default_vmmap() {}
+}
+
+#[cfg(test)]
 mod tests {
+    use nodit::interval::ie;
+
+    use crate::types::VmmapOps;
+    use crate::vmmap_entries::test_vmmap_entry_util::*;
+
     use super::Vmmap;
 
     #[test]
-    fn test_vmmap_new() {
-        let vmmap = Vmmap::new();
+    fn test_add_invalid_vmmap_entry() {
+        let mut vmmap = Vmmap::new();
         assert!(vmmap.entries.is_empty());
+
+        let invalid_vmmap_entry = create_invalid_vmmap_entry();
+
+        let add_invalid_vmmap_entry = vmmap.add_entry_with_override(
+            invalid_vmmap_entry.page_num,
+            invalid_vmmap_entry.npages,
+            invalid_vmmap_entry.prot,
+            invalid_vmmap_entry.maxprot,
+            invalid_vmmap_entry.flags,
+            invalid_vmmap_entry.backing,
+            invalid_vmmap_entry.file_offset,
+            invalid_vmmap_entry.file_size,
+            invalid_vmmap_entry.cage_id,
+        );
+
+        assert!(add_invalid_vmmap_entry.is_err());
+    }
+
+    #[test]
+    fn test_add_valid_vmmap_entry() {
+        let mut vmmap = Vmmap::new();
+        assert!(vmmap.entries.is_empty());
+
+        let vmmap_entry = create_default_vmmap_entry();
+
+        let add_vmmap_entry = vmmap.add_entry_with_override(
+            vmmap_entry.page_num,
+            vmmap_entry.npages,
+            vmmap_entry.prot,
+            vmmap_entry.maxprot,
+            vmmap_entry.flags,
+            vmmap_entry.backing,
+            vmmap_entry.file_offset,
+            vmmap_entry.file_size,
+            vmmap_entry.cage_id,
+        );
+
+        assert!(add_vmmap_entry.is_ok());
+        assert_eq!(vmmap.entries.len(), 1);
+        assert!(vmmap.entries.contains_interval(ie(0, 10)));
     }
 }

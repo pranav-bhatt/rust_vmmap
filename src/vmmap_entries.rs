@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 use crate::constants::{
-    // MAP_PRIVATE, O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, PAGESIZE, 
-    PROT_NONE, 
+    // MAP_PRIVATE, O_ACCMODE, O_RDONLY, O_RDWR, O_WRONLY, PAGESIZE,
+    PROT_NONE,
     // PROT_READ, PROT_WRITE,
 };
 use crate::types::{MemoryBackingType, VmmapEntry};
@@ -67,7 +67,42 @@ impl VmmapEntry {
 
     // Leave todo
     fn check_fd_protection(&self, cage_id: i32) {
-        let _= cage_id;
+        let _ = cage_id;
     } // will call the microvisor, need to pass fd
-                                                   // number if only its files backed and returns flags of fd
+      // number if only its files backed and returns flags of fd
+}
+
+#[cfg(test)]
+pub mod test_vmmap_entry_util {
+    use crate::types::VmmapEntry;
+
+    pub fn create_invalid_vmmap_entry() -> VmmapEntry {
+        VmmapEntry::new(
+            0,
+            0, // setting npages = 0 makes it an invalid entry
+            0,
+            0,
+            0,
+            false,
+            0,
+            0,
+            1,
+            crate::types::MemoryBackingType::Anonymous,
+        )
+    }
+
+    pub fn create_default_vmmap_entry() -> VmmapEntry {
+        VmmapEntry::new(
+            0,
+            10, // setting npages = 0 makes it an invalid entry
+            0,
+            0,
+            0,
+            false,
+            0,
+            0,
+            1,
+            crate::types::MemoryBackingType::Anonymous,
+        )
+    }
 }

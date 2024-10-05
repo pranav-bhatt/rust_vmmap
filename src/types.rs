@@ -1,3 +1,5 @@
+use std::io;
+
 use nodit::Interval;
 
 /// Used to identify whether the vmmap entry is backed anonymously,
@@ -43,7 +45,7 @@ pub trait VmmapOps {
         file_offset: i64,
         file_size: i64,
         cage_id: u64,
-    );
+    ) -> Result<(), io::Error>;
 
     fn add_entry(&mut self, vmmap_entry_ref: VmmapEntry);
 
@@ -58,11 +60,11 @@ pub trait VmmapOps {
         file_offset: i64,
         file_size: i64,
         cage_id: u64,
-    );
+    ) -> Result<(), io::Error>;
 
     fn change_prot(&mut self, page_num: u32, npages: u32, new_prot: i32);
 
-    fn remove_entry(&mut self, page_num: u32, npages: u32);
+    fn remove_entry(&mut self, page_num: u32, npages: u32) -> Result<(), io::Error>;
 
     fn check_existing_mapping(&self, page_num: u32, npages: u32, prot: i32) -> bool;
 
