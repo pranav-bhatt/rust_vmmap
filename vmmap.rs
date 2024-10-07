@@ -500,10 +500,12 @@ mod tests {
         vmmap.add_entry_with_override(100, 10, PROT_READ, PROT_READ | PROT_WRITE, 0, MemoryBackingType::None, 0, 0, 0).unwrap();
 
         // Change protection for the entire entry
+        // Expected: The protection should change for the whole entry without splitting
         let result = vmmap.change_prot(100, 110, PROT_WRITE);
         assert!(result.is_ok());
 
         // Verify the change
+        // Expected: A single entry with updated protection
         let entry = vmmap.find_page(100).unwrap();
         assert_eq!(entry.prot, PROT_WRITE);
         assert_eq!(entry.page_num, 100);
@@ -518,10 +520,12 @@ mod tests {
         vmmap.add_entry_with_override(100, 20, PROT_READ, PROT_READ | PROT_WRITE, 0, MemoryBackingType::None, 0, 0, 0).unwrap();
 
         // Change protection for part of the entry
+        // Expected: The entry should be split into three parts
         let result = vmmap.change_prot(105, 115, PROT_WRITE);
         assert!(result.is_ok());
 
         // Verify the changes
+        // Expected: Three entries with different protections
         let entry1 = vmmap.find_page(100).unwrap();
         let entry2 = vmmap.find_page(105).unwrap();
         let entry3 = vmmap.find_page(115).unwrap();
@@ -549,10 +553,12 @@ mod tests {
         vmmap.add_entry_with_override(120, 10, PROT_EXEC, PROT_READ | PROT_WRITE | PROT_EXEC, 0, MemoryBackingType::None, 0, 0, 0).unwrap();
 
         // Change protection across multiple entries
+        // Expected: Entries should be split and merged as necessary
         let result = vmmap.change_prot(105, 125, PROT_READ | PROT_WRITE);
         assert!(result.is_ok());
 
         // Verify the changes
+        // Expected: Five entries with updated protections
         let entries: Vec<_> = vmmap.entries.values().collect();
         assert_eq!(entries.len(), 5);
 
@@ -576,5 +582,7 @@ mod tests {
         assert_eq!(entries[4].page_num, 125);
         assert_eq!(entries[4].npages, 5);
     }
+
+    
 
 }
