@@ -6,7 +6,7 @@ use nodit::Interval;
 /// by an fd, or by a shared memory segment
 
 #[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemoryBackingType {
     None, // just a dummy value for places where it needs to be passed, but you dont have the value
     Anonymous,
@@ -17,7 +17,7 @@ pub enum MemoryBackingType {
 /// in the old native client based vmmap, we relied on the fd, shmid
 /// fields. Here we remove those fields and replace with a 'backing' field
 /// which is an enum containing info based on the type
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct VmmapEntry {
     pub page_num: u32, /* base virtual addr >> NACL_PAGESHIFT */
     pub npages: u32,   /* number of pages */

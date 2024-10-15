@@ -78,6 +78,12 @@ impl VmmapOps for Vmmap {
         )
     }
 
+    /// This function will not return any errors pertaining to the page number not mapping
+    /// to any existing pages, as the remove operation is done on a best efforts basis:
+    /// 1. First an insert overwrite operation with the below page range is performed, causing
+    /// a new interval to be created over the provided page range, appropriately partitioning
+    /// boundary pages.
+    /// 2. This new interval is then deleted, leaving the underlying range unmapped
     fn remove_entry(&mut self, page_num: u32, npages: u32) -> Result<(), io::Error> {
         self.update(
             page_num,
@@ -445,10 +451,11 @@ mod tests {
     use super::Vmmap;
 
     #[test]
-    fn test_add_invalid_vmmap_entry() {
+    fn test_add_valid_vmmap_entry() {
         let mut vmmap = Vmmap::new();
         assert!(vmmap.entries.is_empty());
 
+        // trying to add invalid entry should fail
         let invalid_vmmap_entry = create_invalid_vmmap_entry();
 
         let add_invalid_vmmap_entry = vmmap.add_entry_with_override(
@@ -464,13 +471,58 @@ mod tests {
         );
 
         assert!(add_invalid_vmmap_entry.is_err());
+
+        // add proper entry
+        let vmmap_entry_0_10 = create_default_vmmap_entry();
+
+        let add_vmmap_entry = vmmap.add_entry_with_override(
+            vmmap_entry_0_10.page_num,
+            vmmap_entry_0_10.npages,
+            vmmap_entry_0_10.prot,
+            vmmap_entry_0_10.maxprot,
+            vmmap_entry_0_10.flags,
+            vmmap_entry_0_10.backing,
+            vmmap_entry_0_10.file_offset,
+            vmmap_entry_0_10.file_size,
+            vmmap_entry_0_10.cage_id,
+        );
+
+        assert!(add_vmmap_entry.is_ok());
+        assert_eq!(vmmap.entries.len(), 1);
+        assert_eq!(vmmap.entries.get_at_point(0), Some(&vmmap_entry_0_10));
+        assert_eq!(vmmap.entries.get_at_point(10), None);
+        assert!(vmmap.entries.contains_interval(ie(0, 10)));
+
+        let mut vmmap_entry_5_10 = create_default_vmmap_entry();
+        vmmap_entry_5_10.page_num = 5;
+        vmmap_entry_5_10.npages = 3;
+
+        let add_overwritten_vmmap_entry = vmmap.add_entry_with_override(
+            vmmap_entry_5_10.page_num,
+            vmmap_entry_5_10.npages,
+            vmmap_entry_5_10.prot,
+            vmmap_entry_5_10.maxprot,
+            vmmap_entry_5_10.flags,
+            vmmap_entry_5_10.backing,
+            vmmap_entry_5_10.file_offset,
+            vmmap_entry_5_10.file_size,
+            vmmap_entry_5_10.cage_id,
+        );
+
+        assert!(add_overwritten_vmmap_entry.is_ok());
+        assert_eq!(vmmap.entries.len(), 3);
+        assert_eq!(vmmap.entries.get_at_point(0), Some(&vmmap_entry_0_10));
+        assert_eq!(vmmap.entries.get_at_point(5), Some(&vmmap_entry_5_10));
+        assert_eq!(vmmap.entries.get_at_point(8), Some(&vmmap_entry_0_10));
+        assert_eq!(vmmap.entries.get_at_point(10), None);
+        // just checks to see if all values in range are allocated
+        assert!(vmmap.entries.contains_interval(ie(0, 10)));
+
     }
 
     #[test]
-    fn test_add_valid_vmmap_entry() {
+    fn test_remove_vmmap_entry() {
         let mut vmmap = Vmmap::new();
-        assert!(vmmap.entries.is_empty());
-
         let vmmap_entry = create_default_vmmap_entry();
 
         let add_vmmap_entry = vmmap.add_entry_with_override(
@@ -484,9 +536,10 @@ mod tests {
             vmmap_entry.file_size,
             vmmap_entry.cage_id,
         );
-
         assert!(add_vmmap_entry.is_ok());
-        assert_eq!(vmmap.entries.len(), 1);
-        assert!(vmmap.entries.contains_interval(ie(0, 10)));
+
+        // try to remove from some invalid range, shouldn't return any errors (see fn docs)
+        let remove_non_existant = vmmap.remove_entry(11, 1);
+        assert!(remove_non_existant.is_ok());
     }
 }
