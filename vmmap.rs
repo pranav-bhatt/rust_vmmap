@@ -542,4 +542,141 @@ mod tests {
         let remove_non_existant = vmmap.remove_entry(11, 1);
         assert!(remove_non_existant.is_ok());
     }
+
+    // Test changing protection within the maximum allowed protection
+    #[test]
+    fn test_change_prot_within_maxprot() {
+        // Initialize Vmmap and create a default entry
+        let mut vmmap = Vmmap::new();
+        let mut vmmap_entry = create_default_vmmap_entry();
+        vmmap_entry.page_num = 0;
+        vmmap_entry.npages = 10;
+        vmmap_entry.prot = ProtFlags::READ;
+        vmmap_entry.maxprot = ProtFlags::READ | ProtFlags::WRITE;
+
+        // Add the initial entry to the Vmmap
+        let add_result = vmmap.add_entry_with_override(
+            vmmap_entry.page_num,
+            vmmap_entry.npages,
+            vmmap_entry.prot,
+            vmmap_entry.maxprot,
+            vmmap_entry.flags,
+            vmmap_entry.backing,
+            vmmap_entry.file_offset,
+            vmmap_entry.file_size,
+            vmmap_entry.cage_id,
+        );
+        assert!(add_result.is_ok(), "Failed to add initial entry");
+
+        // Attempt to change protection within maxprot
+        let change_result = vmmap.change_prot(0, 5, ProtFlags::READ | ProtFlags::WRITE);
+        assert!(change_result.is_ok(), "Failed to change protection within maxprot");
+
+        // Verify the changes
+        let changed_entry = vmmap.entries.get_at_point(0).unwrap();
+        assert_eq!(changed_entry.prot, ProtFlags::READ | ProtFlags::WRITE, "Protection not changed as expected");
+        assert_eq!(changed_entry.npages, 5, "Number of pages changed unexpectedly");
+    }
+
+    // Test changing protection beyond the maximum allowed protection
+    #[test]
+    fn test_change_prot_beyond_maxprot() {
+        // Initialize Vmmap and create a default entry
+        let mut vmmap = Vmmap::new();
+        let mut vmmap_entry = create_default_vmmap_entry();
+        vmmap_entry.page_num = 0;
+        vmmap_entry.npages = 10;
+        vmmap_entry.prot = ProtFlags::READ;
+        vmmap_entry.maxprot = ProtFlags::READ | ProtFlags::WRITE;
+
+        // Add the initial entry to the Vmmap
+        let add_result = vmmap.add_entry_with_override(
+            vmmap_entry.page_num,
+            vmmap_entry.npages,
+            vmmap_entry.prot,
+            vmmap_entry.maxprot,
+            vmmap_entry.flags,
+            vmmap_entry.backing,
+            vmmap_entry.file_offset,
+            vmmap_entry.file_size,
+            vmmap_entry.cage_id,
+        );
+        assert!(add_result.is_ok(), "Failed to add initial entry");
+
+        // Attempt to change protection beyond maxprot
+        let invalid_change = vmmap.change_prot(5, 5, ProtFlags::READ | ProtFlags::WRITE | ProtFlags::EXEC);
+        assert!(invalid_change.is_err(), "Changing protection beyond maxprot should fail");
+    }
+
+    // Test changing protection for a non-existent range
+    #[test]
+    fn test_change_prot_non_existent_range() {
+        // Initialize Vmmap and create a default entry
+        let mut vmmap = Vmmap::new();
+        let mut vmmap_entry = create_default_vmmap_entry();
+        vmmap_entry.page_num = 0;
+        vmmap_entry.npages = 10;
+        vmmap_entry.prot = ProtFlags::READ;
+        vmmap_entry.maxprot = ProtFlags::READ | ProtFlags::WRITE;
+
+        // Add the initial entry to the Vmmap
+        let add_result = vmmap.add_entry_with_override(
+            vmmap_entry.page_num,
+            vmmap_entry.npages,
+            vmmap_entry.prot,
+            vmmap_entry.maxprot,
+            vmmap_entry.flags,
+            vmmap_entry.backing,
+            vmmap_entry.file_offset,
+            vmmap_entry.file_size,
+            vmmap_entry.cage_id,
+        );
+        assert!(add_result.is_ok(), "Failed to add initial entry");
+
+        // Attempt to change protection for a non-existent range
+        let non_existent_change = vmmap.change_prot(20, 5, ProtFlags::READ);
+        assert!(non_existent_change.is_err(), "Changing protection for non-existent range should fail");
+    }
+
+    // Test changing protection across multiple entries
+    #[test]
+    fn test_change_prot_across_multiple_entries() {
+        // Initialize Vmmap and create a default entry
+        let mut vmmap = Vmmap::new();
+        let mut vmmap_entry = create_default_vmmap_entry();
+        vmmap_entry.page_num = 0;
+        vmmap_entry.npages = 10;
+        vmmap_entry.prot = ProtFlags::READ;
+        vmmap_entry.maxprot = ProtFlags::READ | ProtFlags::WRITE;
+
+        // Add the initial entry to the Vmmap
+        let add_result = vmmap.add_entry_with_override(
+            vmmap_entry.page_num,
+            vmmap_entry.npages,
+            vmmap_entry.prot,
+            vmmap_entry.maxprot,
+            vmmap_entry.flags,
+            vmmap_entry.backing,
+            vmmap_entry.file_offset,
+            vmmap_entry.file_size,
+            vmmap_entry.cage_id,
+        );
+        assert!(add_result.is_ok(), "Failed to add initial entry");
+
+        // Add a second entry
+        let _ = vmmap.add_entry_with_override(10, 5, ProtFlags::READ, ProtFlags::READ | ProtFlags::WRITE, vmmap_entry.flags, vmmap_entry.backing, vmmap_entry.file_offset, vmmap_entry.file_size, vmmap_entry.cage_id);
+        
+        // Attempt to change protection across the boundary of two entries
+        let multi_entry_change = vmmap.change_prot(8, 4, ProtFlags::READ | ProtFlags::WRITE);
+        assert!(multi_entry_change.is_ok(), "Failed to change protection across multiple entries");
+
+        // Verify the changes
+        assert_eq!(vmmap.entries.len(), 3, "Unexpected number of entries after multi-entry change");
+        assert_eq!(vmmap.entries.get_at_point(8).unwrap().prot, ProtFlags::READ | ProtFlags::WRITE, "Protection not changed as expected for first affected entry");
+        assert_eq!(vmmap.entries.get_at_point(10).unwrap().prot, ProtFlags::READ | ProtFlags::WRITE, "Protection not changed as expected for second affected entry");
+    }
+
 }
+    
+    
+
